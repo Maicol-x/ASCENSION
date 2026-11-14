@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "generation": "2026-07-25T22:41:20Z",
+  "count": 229308,
+  "files": {
+    "core": "/cameras.core.json",
+    "labels": "/cameras.labels.json",
+    "detail": "/cameras.detail/{chunk}.json"
+  }
+}
