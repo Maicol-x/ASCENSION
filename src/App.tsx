@@ -102,10 +102,10 @@ function HlsPlayer({ url, cacheBust, onFallback, proxyBase }: { url: string; cac
     // First failure escalates to the proxy; failing again (or no proxy) means static.
     const escalate = () => {
       if (!useProxy && canProxy) {
-        console.log('[Argus] Stream failed direct — retrying via local proxy.');
+        console.log('[NEXUS] Stream failed direct — retrying via local proxy.');
         setUseProxy(true);
       } else {
-        console.log('[Argus] Stream unavailable — falling back to static image.');
+        console.log('[NEXUS] Stream unavailable — falling back to static image.');
         onFallback?.();
       }
     };
@@ -134,7 +134,7 @@ function HlsPlayer({ url, cacheBust, onFallback, proxyBase }: { url: string; cac
       // Detect CORS blocks or dead streams and escalate (proxy → static).
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (data.fatal) {
-          console.log(`[Argus] Stream ${data.details}${useProxy ? ' (via proxy)' : ''}`);
+          console.log(`[NEXUS] Stream ${data.details}${useProxy ? ' (via proxy)' : ''}`);
           hls?.destroy();
           escalate();
         }
@@ -1351,7 +1351,7 @@ function App() {
         </div>
       )}
 
-      {/* ── ARGUS HUD — TOP RIGHT ── */}
+      {/* ── nexus HUD — TOP RIGHT ── */}
       <div style={{ position: 'absolute', top: 32, right: 32, zIndex: 30, width: 340 }} className="pointer-events-auto">
         <motion.div
           animate={{ height: isHudMinimized ? 120 : 'auto' }}
@@ -1360,7 +1360,7 @@ function App() {
           {/* Logo Section */}
           <div className="mb-6 flex items-start justify-between">
             <div>
-              <h1 className="text-4xl font-extrabold tracking-tighter text-white">ARGUS</h1>
+              <h1 className="text-4xl font-extrabold tracking-tighter text-white">nexus</h1>
               <div className="flex items-center gap-2 mt-2">
                 <Scan className="w-4 h-4 text-[#00e5ff]" />
                 <p className="text-xs text-[#00e5ff] font-mono tracking-widest uppercase">Global Network</p>
@@ -1886,7 +1886,7 @@ function App() {
               </div>
 
               <div className="mt-6 pt-6 border-t border-white/5">
-                <p className="text-[10px] text-gray-600 font-mono text-center uppercase tracking-widest">Argus v1.4.2 · Secure</p>
+                <p className="text-[10px] text-gray-600 font-mono text-center uppercase tracking-widest">NEXUS v1.4.2 · Secure</p>
               </div>
               </div>
             </motion.div>

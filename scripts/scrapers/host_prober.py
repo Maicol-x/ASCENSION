@@ -122,7 +122,7 @@ def probe_iframe_host(host: str, sample_url: str, timeout: int = 10) -> bool:
         if directive.lower().startswith("frame-ancestors"):
             sources = directive.split()[1:]
             # 'none', or any allowlist that doesn't include '*', blocks a
-            # third-party origin like Argus's.
+            # third-party origin like NEXUS's.
             if not sources or "'none'" in sources or "*" not in sources:
                 return False
     return True

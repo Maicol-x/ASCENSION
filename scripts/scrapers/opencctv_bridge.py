@@ -3,7 +3,7 @@ OpenCCTV harvester
 ==================
 Pulls the public camera catalog from opencctv.org and stores the **real
 underlying source feed_urls** (never opencctv's own proxy URLs). opencctv is
-used purely as a discovery index of sources Argus doesn't yet scrape natively.
+used purely as a discovery index of sources NEXUS doesn't yet scrape natively.
 
 Mechanics: `/api/cameras/markers` returns every camera id in one call; then
 `POST /api/cameras/batch {"ids":[…≤50…]}` returns full records (feed_url,
@@ -14,7 +14,7 @@ same first 100 rows.)
 
 Playability flag (`direct_eligible`): opencctv's `force_direct` means the feed
 embeds straight from origin. We additionally refuse:
-  - `proxy_zone`/`geo_allow` feeds — they need a residential/geo proxy Argus won't run
+  - `proxy_zone`/`geo_allow` feeds — they need a residential/geo proxy NEXUS won't run
   - `iframe` feeds — the current frontend can't embed them
 Non-eligible cameras are still stored (mapped, greyed out) for a future proxy phase.
 """

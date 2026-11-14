@@ -1,9 +1,9 @@
 """
-Argus — Global Camera Intelligence
+NEXUS — Global Camera Intelligence
 Data Pipeline
 ===========================================
 Fetches public open-data camera feeds from multiple free sources and
-compiles them into a single cameras.geojson file for the Argus React frontend.
+compiles them into a single cameras.geojson file for the NEXUS React frontend.
 
 SOURCES:
   1. BC DriveBC API       - ~1,040 cameras, BC Canada. FREE, no key.
@@ -53,7 +53,7 @@ CONFIG["WINDY_API_KEY"] = os.getenv("WINDY_API_KEY")
 
 
 HEADERS = {
-    "User-Agent": "Argus/1.0 (Open Data Camera Aggregator; Educational Project)"
+    "User-Agent": "NEXUS/1.0 (Open Data Camera Aggregator; Educational Project)"
 }
 
 
@@ -387,7 +387,7 @@ def deduplicate(features: list[dict]) -> list[dict]:
 # ─────────────────────────────────────────────────────────
 def main():
     print("\n" + "═" * 60)
-    print("  Argus — Camera Data Pipeline")
+    print("  NEXUS — Camera Data Pipeline")
     print("═" * 60 + "\n")
 
     all_features: list[dict] = []

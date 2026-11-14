@@ -1,5 +1,5 @@
 """
-Argus — Windy Webcams Global Scraper (Unified)
+NEXUS — Windy Webcams Global Scraper (Unified)
 ==============================================
 Single-pass recursive grid scraper that combines the old fetch_windy_massive.py
 and fetch_windy_dense.py into one plugin.

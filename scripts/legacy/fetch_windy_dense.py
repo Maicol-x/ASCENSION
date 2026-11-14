@@ -1,5 +1,5 @@
 """
-Argus — Windy Dense Region Recursive Scraper
+NEXUS — Windy Dense Region Recursive Scraper
 ===========================================
 This script reads the existing 'windy_massive.geojson' file and exclusively
 targets the 14 specific 20x20 degree bounding boxes that hit the 1,000 camera cap.
@@ -51,7 +51,7 @@ load_env()
 CONFIG["WINDY_API_KEY"] = os.getenv("WINDY_API_KEY")
 
 HEADERS = {
-    "User-Agent": "Argus/1.0",
+    "User-Agent": "NEXUS/1.0",
     "x-windy-api-key": CONFIG["WINDY_API_KEY"]
 }
 
@@ -164,7 +164,7 @@ def main():
         return
 
     print("\n" + "═" * 60)
-    print("  Argus — Dense Region Recursive Scraper")
+    print("  NEXUS — Dense Region Recursive Scraper")
     print("═" * 60 + "\n")
 
     input_path = "archive/windy_massive.geojson"  # moved out of public/, no longer served to the frontend

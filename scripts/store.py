@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Argus — SQLite camera store (system of record)
+NEXUS — SQLite camera store (system of record)
 ==============================================
 Replaces the "one giant in-memory geojson" model. Scrapers upsert into SQLite;
 `public/cameras.geojson`, `public/summary.json` and the vector tiles are all
@@ -245,7 +245,7 @@ def _feed_key(feed_url: str, origin_host: str) -> str:
 
 def dedupe_prefer_native(conn: sqlite3.Connection, commit: bool = True) -> int:
     """Drop opencctv_* cameras whose underlying feed matches a native (non-opencctv)
-    camera — Argus's own scrapers are authoritative for the sources they cover.
+    camera — NEXUS's own scrapers are authoritative for the sources they cover.
 
     `commit=False` — see upsert_features."""
     rows = conn.execute("SELECT id, source, feed_url, origin_host FROM cameras").fetchall()

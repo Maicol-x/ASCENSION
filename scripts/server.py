@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Argus — Local Control Server
+NEXUS — Local Control Server
 ============================
-A tiny stdlib-only HTTP server that lets the Argus web UI trigger the scraper
+A tiny stdlib-only HTTP server that lets the NEXUS web UI trigger the scraper
 pipeline and stream its progress live. It exists ONLY for local development —
-Argus itself stays a static, $0-hosted site. Run it alongside `npm run dev`:
+NEXUS itself stays a static, $0-hosted site. Run it alongside `npm run dev`:
 
     python scripts/server.py            # listens on http://localhost:8787
 
@@ -47,7 +47,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPTS_DIR)
 
-PORT = int(os.getenv("ARGUS_SERVER_PORT", "8787"))
+PORT = int(os.getenv("NEXUS_SERVER_PORT", "8787"))
 
 # target -> extra scraper.py args. Native = everything except the opencctv bridge.
 TARGETS = {
@@ -206,7 +206,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(403, {"error": "host not allowed"})
             return
 
-        req_headers = {"User-Agent": "Mozilla/5.0 (Argus proxy)"}
+        req_headers = {"User-Agent": "Mozilla/5.0 (NEXUS proxy)"}
         for h in _PROXY_FORWARD_HEADERS:
             val = self.headers.get(h)
             if val:
@@ -344,11 +344,11 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print("\n" + "=" * 58)
-    print("  Argus — Local Control Server")
+    print("  NEXUS — Local Control Server")
     print("=" * 58)
     print(f"  Listening on   http://localhost:{PORT}")
     print(f"  Health check   http://localhost:{PORT}/api/health")
-    print("  The Argus Settings panel will now enable Data Sync.")
+    print("  The NEXUS Settings panel will now enable Data Sync.")
     print("  Press Ctrl+C to stop.\n")
     try:
         server.serve_forever()

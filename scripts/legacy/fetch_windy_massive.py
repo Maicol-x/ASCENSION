@@ -1,5 +1,5 @@
 """
-Argus — Global Camera Intelligence
+NEXUS — Global Camera Intelligence
 Massive Windy Scraper
 ===========================================
 This script uses a 10x10 degree micro-grid system to bypass the Windy API's 
@@ -43,7 +43,7 @@ load_env()
 CONFIG["WINDY_API_KEY"] = os.getenv("WINDY_API_KEY")
 
 HEADERS = {
-    "User-Agent": "Argus/1.0 (Open Data Camera Aggregator; Educational Project)",
+    "User-Agent": "NEXUS/1.0 (Open Data Camera Aggregator; Educational Project)",
     "x-windy-api-key": CONFIG["WINDY_API_KEY"]
 }
 
@@ -134,7 +134,7 @@ def main():
         return
 
     print("\n" + "═" * 60)
-    print("  Argus — Massive Windy Micro-Grid Scraper")
+    print("  NEXUS — Massive Windy Micro-Grid Scraper")
     print("═" * 60 + "\n")
 
     grid = CONFIG["GRID_SIZE"]

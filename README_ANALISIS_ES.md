@@ -1,4 +1,4 @@
-# Argus — análisis técnico
+# NEXUS — análisis técnico
 
 **Revisión:** 2026-11-12  
 **Método:** lectura estática del código y pruebas manuales de la interfaz local
@@ -11,7 +11,7 @@ explique.
 
 ## Resumen
 
-Argus es un explorador web de cámaras públicas y webcams: sitúa registros en un
+NEXUS es un explorador web de cámaras públicas y webcams: sitúa registros en un
 mapa, filtra por país/sector y permite abrir la imagen, el vídeo o el reproductor
 asociado a una cámara. No es un sistema de control de cámaras: el código revisado
 consulta fuentes externas y muestra sus feeds; no contiene una función para
@@ -112,7 +112,7 @@ alternativa estática cuando existe.
   HUD mostró 218.028 nodos: 25.905 con URL de stream y 192.123 estáticos. La
   diferencia se excluye por las reglas de visualización; no se puede concluir
   solo por esa diferencia que todas esas cámaras estén desconectadas.
-- El texto `System Status: Active` y la etiqueta `Argus v1.4.2 · Secure` son
+- El texto `System Status: Active` y la etiqueta `NEXUS v1.4.2 · Secure` son
   literales de la interfaz. No son un diagnóstico ni una versión tomada de
   `package.json` (que declara `0.0.0`).
 - `Last Sync` se basa en el reloj local de la vista/feed, no en la fecha de
@@ -240,7 +240,7 @@ propuestas, no cambios implementados ni una certificación de seguridad.
 
 # Ampliación: pruebas dinámicas y fallos controlados
 
-Esta actualización conserva los hallazgos anteriores y agrega resultados reproducidos en una copia sintética aislada de la interfaz. Ninguna prueba solicitó cámaras, feeds, APIs ni proveedores externos. La copia `.argus-lab-fixture/` sirvió datos inventados en `127.0.0.1:5174`; no se modificó código de producción. Las observaciones prueban el frontend ante esas respuestas, no el comportamiento de scrapers o servicios externos.
+Esta actualización conserva los hallazgos anteriores y agrega resultados reproducidos en una copia sintética aislada de la interfaz. Ninguna prueba solicitó cámaras, feeds, APIs ni proveedores externos. La copia `.nexus-lab-fixture/` sirvió datos inventados en `127.0.0.1:5174`; no se modificó código de producción. Las observaciones prueban el frontend ante esas respuestas, no el comportamiento de scrapers o servicios externos.
 
 ## 1. Análisis dinámico y comportamiento en ejecución
 
@@ -293,7 +293,7 @@ Se conservó la suma de conteos. No mide Deck.gl, FPS, GPU, latencia de interacc
 
 No se corrigió código, por lo que no hubo repetición post-fix ni se añadieron tests. Casos reproducibles candidatos: core HTTP/JSON inválido; labels 500 y rechazo no controlado; detalle 500; feeds HTTP/corruptos/lentos; generaciones mezcladas; longitudes fuera de rango. No existe `npm test` declarado.
 
-Se ejecutaron `npm run lint` y `npm run build` en Argus. Lint falló: 5 errores y 6 advertencias en `src/App.tsx`, incluidos `react-hooks/set-state-in-effect`, `no-explicit-any` y dependencias de hooks. Build falló con 8 errores TypeScript en `src/App.tsx` sobre eventos de mapa, tipos GeoJSON y `viewState` (código 2). Son fallos observados durante esta revisión; no se atribuyen a las pruebas, que no editaron producción.
+Se ejecutaron `npm run lint` y `npm run build` en NEXUS. Lint falló: 5 errores y 6 advertencias en `src/App.tsx`, incluidos `react-hooks/set-state-in-effect`, `no-explicit-any` y dependencias de hooks. Build falló con 8 errores TypeScript en `src/App.tsx` sobre eventos de mapa, tipos GeoJSON y `viewState` (código 2). Son fallos observados durante esta revisión; no se atribuyen a las pruebas, que no editaron producción.
 
 ## 10. Causas raíz y correcciones propuestas
 
@@ -312,7 +312,7 @@ La ejecución dinámica inicial cubrió solo interfaz y worker con datos sintét
 
 ## Alcance y entorno
 
-Pruebas realizadas el 13-11-2026 sobre el árbol Argus en `C:\Users\Janus\OneDrive\Documentos\Proyecto predeterminado\Argus-master\Argus-master`. Se usó Python 3.14.5, SQLite 3.50.4 y Node v24.22.1. `python` apuntaba al alias de Microsoft Store, pero el launcher `py -3.14` sí encontró el runtime. Los scrapers requieren `requests`, que no estaba instalado; para validar imports se instaló `requests` 2.34.2 y sus dependencias en un destino temporal fuera del proyecto, no en el entorno global.
+Pruebas realizadas el 13-11-2026 sobre el árbol NEXUS en `C:\Users\Janus\OneDrive\Documentos\Proyecto predeterminado\NEXUS-master\NEXUS-master`. Se usó Python 3.14.5, SQLite 3.50.4 y Node v24.22.1. `python` apuntaba al alias de Microsoft Store, pero el launcher `py -3.14` sí encontró el runtime. Los scrapers requieren `requests`, que no estaba instalado; para validar imports se instaló `requests` 2.34.2 y sus dependencias en un destino temporal fuera del proyecto, no en el entorno global.
 
 No existe una suite backend en el repositorio: `py -3.14 -m unittest discover -s scripts -p 'test*.py' -v` descubrió cero tests y devolvió el estado 5 (`NO TESTS RAN`). En consecuencia, se preparó un harness efímero con SQLite, directorios temporales, respuestas HTTP locales y plugins/subprocesos simulados; no se cambiaron módulos de producción ni se tocó la base/los exports del proyecto.
 

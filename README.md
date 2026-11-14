@@ -1,6 +1,6 @@
-# ARGUS — Global Camera Intelligence
+# NEXUS — Global Camera Intelligence
 
-Argus is an open-source interactive map of **229,000+ public traffic and CCTV camera records** from government and commercial sources worldwide — highway DOT cameras, city traffic cams, and public webcams, aggregated from open data APIs and rendered on a GPU-accelerated map (with a 3D globe view built in). The selected feed may be live video or a static snapshot; camera metadata is a separately refreshed dataset, not a real-time inventory.
+NEXUS is an open-source interactive map of **229,000+ public traffic and CCTV camera records** from government and commercial sources worldwide — highway DOT cameras, city traffic cams, and public webcams, aggregated from open data APIs and rendered on a GPU-accelerated map (with a 3D globe view built in). The selected feed may be live video or a static snapshot; camera metadata is a separately refreshed dataset, not a real-time inventory.
 
 It's two independent halves:
 
@@ -30,8 +30,8 @@ limitations, and improvement priorities, see the Spanish
 
 ## Showcase
 
-![Argus Tactical UI](src/assets/argus_demo_1.png)
-![Argus Tactical UI](src/assets/argus_demo_2.png)
+![NEXUS Tactical UI](src/assets/nexus_demo_1.png)
+![NEXUS Tactical UI](src/assets/nexus_demo_2.png)
 
 ## Quick Start
 
@@ -89,7 +89,7 @@ allowed origins and quota with the provider; never put private credentials in
 ## Project Structure
 
 ```
-Argus/
+NEXUS/
 ├── src/
 │   ├── App.tsx           # Entire UI: HUD, settings, filters, feed panel, both map renderers
 │   ├── binWorker.ts       # Pixel-binning for the 2D map at low zoom (Web Worker)
@@ -216,6 +216,6 @@ If you find this plugin useful, please leave a star on GitHub or consider suppor
 
 ## License
 
-[![GitHub License](https://img.shields.io/github/license/goslowpoke168/obsidian-clean-ai-paste?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1zY2FsZSI+PHBhdGggZD0ibTE2IDE2IDMtOCAzIDhjLS44Ny42NS0xLjkyIDEtMyAxcy0yLjEzLS4zNS0zLTFaIi8+PHBhdGggZD0ibTIgMTYgMy04IDMgOGMtLjg3LjY1LTEuOTIgMS0zIDFzLTIuMTMtLjM1LTMtMVoiLz48cGF0aCBkPSJNNyAyMWgxMCIvPjxwYXRoIGQ9Ik0xMiAzdjE4Ii8+PHBhdGggZD0iTTMgN2gyYzIgMCA1LTEgNy0yIDIgMSA1IDIgNyAyaDIiLz48L3N2Zz4=)](https://github.com/GoSlowPoke168/Argus/blob/master/LICENSE)
+[![GitHub License](https://img.shields.io/github/license/goslowpoke168/obsidian-clean-ai-paste?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBjbGFzcz0ibHVjaWRlIGx1Y2lkZS1zY2FsZSI+PHBhdGggZD0ibTE2IDE2IDMtOCAzIDhjLS44Ny42NS0xLjkyIDEtMyAxcy0yLjEzLS4zNS0zLTFaIi8+PHBhdGggZD0ibTIgMTYgMy04IDMgOGMtLjg3LjY1LTEuOTIgMS0zIDFzLTIuMTMtLjM1LTMtMVoiLz48cGF0aCBkPSJNNyAyMWgxMCIvPjxwYXRoIGQ9Ik0xMiAzdjE4Ii8+PHBhdGggZD0iTTMgN2gyYzIgMCA1LTEgNy0yIDIgMSA1IDIgNyAyaDIiLz48L3N2Zz4=)](https://github.com/GoSlowPoke168/NEXUS/blob/master/LICENSE)
 
 This project is for educational and open-data visualization purposes only — all camera feeds are sourced from public, non-sensitive government or commercial APIs.

@@ -1,5 +1,5 @@
 """
-Argus — New Zealand Traffic Cameras (trafficnz.info)
+NEXUS — New Zealand Traffic Cameras (trafficnz.info)
 ======================================================
 Source: https://trafficnz.info/service/traffic/rest/4/cameras/all
 257 active highway cameras across NZ, ~70KB JPEG images.

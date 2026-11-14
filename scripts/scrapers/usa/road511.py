@@ -1,5 +1,5 @@
 """
-Argus — Road511 USA Multi-State Scraper
+NEXUS — Road511 USA Multi-State Scraper
 ========================================
 Fetches traffic cameras from the Road511 unified API.
 API: https://api.road511.com/api/v1/features?type=cameras&jurisdiction={STATE}

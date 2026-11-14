@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Argus — Camera Data Pipeline
+NEXUS — Camera Data Pipeline
 ==============================
 Single entry point for all scraper plugins. Supports plugin selection,
 upsert/replace-source/fresh merge modes, parallel execution, and per-state
@@ -167,7 +167,7 @@ CONFIG = {
 def _parse_args():
     parser = argparse.ArgumentParser(
         prog="scraper.py",
-        description="Argus Camera Data Pipeline — unified scraper for all sources",
+        description="NEXUS Camera Data Pipeline — unified scraper for all sources",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Update Modes:
@@ -264,7 +264,7 @@ Examples:
 # ─────────────────────────────────────────────────────────
 def _banner():
     print("\n" + "═" * 65)
-    print("  Argus — Camera Data Pipeline")
+    print("  NEXUS — Camera Data Pipeline")
     print("═" * 65 + "\n")
 
 
