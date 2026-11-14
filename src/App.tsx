@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import DeckGL from '@deck.gl/react';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import MapGL, { Source, Layer } from 'react-map-gl/maplibre';
-import type { MapMouseEvent, ExpressionSpecification } from 'maplibre-gl';
+import type { MapLayerMouseEvent, ExpressionSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Scan, Eye, Activity, X, MapPin, RefreshCw, Clock, Video, ChevronUp, ChevronDown, Settings, Shuffle, Filter, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -310,6 +310,7 @@ interface LabelData {
 }
 interface DetailChunk {
   generation?: string;
+  generated?: string;
   from: number;
   id: string[]; feed: string[]; stream: string[]; route: string[]; ur: number[];
 }
@@ -462,7 +463,7 @@ function App() {
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Data Sync (local control server, dev-only) ──
-  const [syncServerUp, setSyncServerUp] = useState<boolean | null>(null);
+  const [syncServerUp, setSyncServerUp] = useState<boolean | null>(false);
   const [syncTarget, setSyncTarget] = useState<string | null>(null); // running target, or null
   const [syncLog, setSyncLog] = useState<string[]>([]);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
@@ -534,9 +535,11 @@ function App() {
       const c: DetailChunk = await response.json();
       const expectedLength = Math.min(d.chunk, d.count - n * d.chunk);
       const stringArrays = [c.id, c.feed, c.stream, c.route];
+      // Chunks may omit a generation tag entirely; only reject a mismatch when
+      // the chunk actually publishes one.
+      const chunkGeneration = c.generation ?? c.generated;
       if (
-        (d.strictGeneration && c.generation !== d.generation) ||
-        (c.generation && c.generation !== d.generation) ||
+        (chunkGeneration !== undefined && chunkGeneration !== d.generation) ||
         c.from !== n * d.chunk ||
         stringArrays.some(values =>
           !Array.isArray(values) ||
@@ -685,14 +688,16 @@ function App() {
             nextLabels.city.every(value =>
               Number.isInteger(value) && value >= 0 && value < cityDict.length
             );
+          // Some datasets ship only `generated` (no `generation` field). Compare
+          // whichever tag the labels file actually provides; skip the check when
+          // neither is present instead of rejecting an otherwise valid payload.
+          const labelsGeneration = nextLabels.generation ?? nextLabels.generated;
           if (
             nextLabels.count !== d.count ||
             !validCities ||
             !validNames ||
             !validCityIndices ||
-            (manifest
-              ? nextLabels.generation !== generation
-              : nextLabels.generated !== d.generated)
+            (labelsGeneration !== undefined && labelsGeneration !== generation)
           ) {
             throw new Error('Dataset labels do not match the core generation or schema');
           }
@@ -717,28 +722,17 @@ function App() {
     loadData();
   }, []);
 
-  // Probe the local control server once on mount so the stream proxy is known to
-  // be available while viewing a camera (Settings closed). Re-probed on open below.
-  useEffect(() => {
-    let cancelled = false;
+  // The local control server (scripts/server.py) is optional and dev-only. We do
+  // NOT probe it automatically: a missing server makes the browser log network /
+  // CORS errors that look like app failures. Instead the user explicitly connects
+  // from Settings, which is the only thing that ever contacts localhost:8787.
+  const probeSyncServer = () => {
+    setSyncServerUp(null);
     fetch(`${SYNC_SERVER}/api/health`)
       .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(() => { if (!cancelled) setSyncServerUp(true); })
-      .catch(() => { if (!cancelled) setSyncServerUp(false); });
-    return () => { cancelled = true; };
-  }, []);
-
-  // Probe the local control server whenever Settings opens — the Data Sync
-  // controls only work when `python scripts/server.py` is running locally.
-  useEffect(() => {
-    if (!isSettingsOpen) return;
-    let cancelled = false;
-    fetch(`${SYNC_SERVER}/api/health`)
-      .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(() => { if (!cancelled) setSyncServerUp(true); })
-      .catch(() => { if (!cancelled) setSyncServerUp(false); });
-    return () => { cancelled = true; };
-  }, [isSettingsOpen]);
+      .then(() => setSyncServerUp(true))
+      .catch(() => setSyncServerUp(false));
+  };
 
   // Reset the sync UI back to the three idle buttons.
   const resetSync = () => {
@@ -868,8 +862,8 @@ function App() {
 
   // GeoJSON source for the 3D globe path — built only when 3D is active so the
   // 2D default never materializes 100k+ features.
-  const camerasGeoJson = useMemo(() => {
-    if (!data || !is3D) return { type: 'FeatureCollection', features: [] as any[] };
+  const camerasGeoJson = useMemo<GeoJSON.FeatureCollection>(() => {
+    if (!data || !is3D) return { type: 'FeatureCollection', features: [] };
     return {
       type: 'FeatureCollection',
       // Carry the array index, not id/streamUrl — MapLibre serializes every property
@@ -882,12 +876,12 @@ function App() {
     };
   }, [data, is3D, filteredIndices]);
 
-  const hoveredGeoJson = useMemo(() => ({
+  const hoveredGeoJson = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: 'FeatureCollection',
     features: hovered ? [hovered] : []
   }), [hovered]);
 
-  const selectedGeoJson = useMemo(() => ({
+  const selectedGeoJson = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: 'FeatureCollection',
     features: selectedCamera ? [selectedCamera] : []
   }), [selectedCamera]);
@@ -1004,7 +998,7 @@ function App() {
   // Widens an exact-miss to a small box query so near-1px isolated nodes are still
   // clickable. Click-only — MapLibre's box query costs ~100ms, too slow for hover;
   // the 2D path gets the same forgiveness for free via deck's `pickingRadius`.
-  const pickNear = (e: MapMouseEvent) => {
+  const pickNear = (e: MapLayerMouseEvent) => {
     const exact = e.features?.[0];
     if (exact) return exact;
     const { x, y } = e.point;
@@ -1021,7 +1015,7 @@ function App() {
     return best;
   };
 
-  const onMapClick = (e: MapMouseEvent) => {
+  const onMapClick = (e: MapLayerMouseEvent) => {
     const feature = pickNear(e);
     if (feature && data) {
       const i = feature.properties?.i;
@@ -1029,7 +1023,7 @@ function App() {
     }
   };
 
-  const onMapMouseMove = (e: MapMouseEvent) => {
+  const onMapMouseMove = (e: MapLayerMouseEvent) => {
     const feature = e.features?.[0];
     const idx = feature && data ? (feature.properties?.i ?? -1) : -1;
     // Only update hover state when the hovered camera changes.
@@ -1175,8 +1169,9 @@ function App() {
           ref={globeRef as never}
           initialViewState={initialView}
           onMove={e => {
-            if (e.viewState && Number.isFinite(e.viewState.latitude) && Number.isFinite(e.viewState.longitude)) {
-              trackView(e.viewState);
+            const vs = e.viewState;
+            if (vs && 'latitude' in vs && Number.isFinite(vs.latitude) && Number.isFinite(vs.longitude)) {
+              trackView(vs);
             }
           }}
           mapStyle={mapStyle}
@@ -1282,8 +1277,15 @@ function App() {
           key="tactical-deck"
           initialViewState={initialView}
           onViewStateChange={e => {
-            if (e.viewState && Number.isFinite(e.viewState.latitude) && Number.isFinite(e.viewState.longitude)) {
-              trackView(e.viewState);
+            const vs = e.viewState;
+            if (vs && 'latitude' in vs && Number.isFinite(vs.latitude) && Number.isFinite(vs.longitude)) {
+              trackView({
+                longitude: vs.longitude,
+                latitude: vs.latitude,
+                zoom: vs.zoom,
+                pitch: vs.pitch ?? 0,
+                bearing: vs.bearing ?? 0,
+              });
             }
           }}
           controller={true}
@@ -1791,8 +1793,14 @@ function App() {
 
                 {syncServerUp === false ? (
                   <div className="text-[11px] text-gray-500 bg-white/5 border border-white/10 rounded-xl px-3 py-3 leading-relaxed">
-                    Local only. Start the control server, then reopen:
+                    Local only. Start the control server, then reconnect:
                     <code className="block mt-1 text-[#00e5ff] font-mono text-[10px]">python scripts/server.py</code>
+                    <button
+                      onClick={probeSyncServer}
+                      className="mt-2 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 text-gray-300 text-[11px] font-semibold hover:border-white/25 transition-all"
+                    >
+                      Reconnect
+                    </button>
                   </div>
                 ) : (
                   <>
