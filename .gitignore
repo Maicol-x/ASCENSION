@@ -12,3 +12,5 @@ __pycache__/
 scripts/data/
 public/cameras.pmtiles
 public/summary.json
+
+vite_output.log
