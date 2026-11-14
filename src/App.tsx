@@ -822,7 +822,7 @@ function App() {
     if (syncLogRef.current) syncLogRef.current.scrollTop = syncLogRef.current.scrollHeight;
   }, [syncLog]);
 
-  const mapStyle = useMemo(() => "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json", []);
+  const mapStyle = useMemo(() => "https://demotiles.maplibre.org/style.json", []);
 
   // Display country name from a raw code + source (US sources consolidate).
   const countryNameFor = (code: string, source: string) => {
