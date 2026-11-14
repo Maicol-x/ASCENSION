@@ -346,7 +346,13 @@ function camAt(
 }
 
 // Local dev-only control server (scripts/server.py). Absent on the deployed static site.
-const SYNC_SERVER = 'http://localhost:8787';
+// 127.0.0.1 (not "localhost"): server.py listens on IPv4 only, while "localhost"
+// often resolves to IPv6 (::1) first, which would make the proxy unreachable.
+const SYNC_SERVER = 'http://127.0.0.1:8787';
+// The control server / media proxy is a local dev facility. On the deployed static
+// site nothing listens, and an https page can't reach http://127.0.0.1 anyway.
+const IS_LOCAL_DEV = typeof window !== 'undefined' &&
+  /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
 // CORS pass-through proxy on that same server, for streams whose origin sends no
 // Access-Control-Allow-Origin. Only used when reachable; falls back to static otherwise.
 const PROXY_BASE = `${SYNC_SERVER}/api/proxy?url=`;
@@ -431,6 +437,12 @@ function App() {
   const [imgCacheBust, setImgCacheBust] = useState(Date.now());
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [imgLoaded, setImgLoaded] = useState(false);
+  // Still-image attempt chain: 0 = preferred source (local proxy when server is
+  // up, direct otherwise), 1 = the fallback source, 2 = both failed.
+  const [imgAttempt, setImgAttempt] = useState(0);
+  // Whether the selected still feed failed on every attempt. React state (not an
+  // inline style) so it resets cleanly when switching cameras.
+  const [imgFailed, setImgFailed] = useState(false);
   const [isHudMinimized, setIsHudMinimized] = useState(false);
   // Live camera lives in a ref, not state — feeding every pan frame through setState
   // costs a frame of latency (pointer -> setState -> commit -> redraw). `initialView`
@@ -722,10 +734,11 @@ function App() {
     loadData();
   }, []);
 
-  // The local control server (scripts/server.py) is optional and dev-only. We do
-  // NOT probe it automatically: a missing server makes the browser log network /
-  // CORS errors that look like app failures. Instead the user explicitly connects
-  // from Settings, which is the only thing that ever contacts localhost:8787.
+  // Probe the local control server on mount so a running proxy is detected
+  // automatically. The proxy is what lets the dev browser load camera hosts it
+  // cannot reach directly, so it must be known without asking the user. Only
+  // attempted on local dev: the deployed site has no server (and an https page
+  // can't reach http://127.0.0.1).
   const probeSyncServer = () => {
     setSyncServerUp(null);
     fetch(`${SYNC_SERVER}/api/health`)
@@ -733,6 +746,16 @@ function App() {
       .then(() => setSyncServerUp(true))
       .catch(() => setSyncServerUp(false));
   };
+
+  useEffect(() => {
+    if (!IS_LOCAL_DEV) return;
+    let cancelled = false;
+    fetch(`${SYNC_SERVER}/api/health`)
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(() => { if (!cancelled) setSyncServerUp(true); })
+      .catch(() => { if (!cancelled) setSyncServerUp(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Reset the sync UI back to the three idle buttons.
   const resetSync = () => {
@@ -902,6 +925,8 @@ function App() {
   // Resets all per-camera feed state when the selected camera changes.
   useEffect(() => {
     setImgLoaded(false);
+    setImgAttempt(0);
+    setImgFailed(false);
     setImgCacheBust(Date.now());
     setLiveWindyUrl(null);
     setHlsFailed(false);
@@ -928,10 +953,16 @@ function App() {
     }
   }, [selectedCamera?.properties.id]);
 
+  // When the local proxy comes online or goes away, restart the attempt chain so
+  // the preferred source is re-evaluated.
+  useEffect(() => { setImgAttempt(0); setImgFailed(false); }, [syncServerUp]);
+
   const manualRefresh = () => {
     setImgCacheBust(Date.now());
     setLastRefresh(new Date());
     setImgLoaded(false);
+    setImgAttempt(0);
+    setImgFailed(false);
 
     // If it's a windy camera, force a re-fetch of the token
     if (selectedCamera?.properties.source === 'windy') {
@@ -1142,6 +1173,14 @@ function App() {
 
   const feedUrl = selectedCamera?.properties.feedUrl ?? '';
   const streamUrl = selectedCamera?.properties.streamUrl ?? '';
+  // Build the still-image source. With the local proxy up, try it first (the dev
+  // browser often can't reach camera hosts directly), then fall back to the
+  // direct URL before declaring the feed offline.
+  const rawImageUrl = getLiveUrl(feedUrl);
+  const proxyAvailable = syncServerUp === true;
+  const imageSrc = proxyAvailable && imgAttempt === 0
+    ? `${PROXY_BASE}${encodeURIComponent(rawImageUrl)}`
+    : rawImageUrl;
   const datasetStatus = loadError
     ? (data ? 'Stale' : 'Unavailable')
     : labelsError
@@ -1577,6 +1616,18 @@ function App() {
                     />
                   ) : isTxdotJson ? (
                     <TxdotSnapshot url={feedUrl} cacheBust={imgCacheBust} onFallback={() => setStaticFeedFailed(true)} proxyBase={syncServerUp === true ? PROXY_BASE : ''} />
+                  ) : imgFailed ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 bg-[#05090C]">
+                      <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
+                        <Eye className="w-8 h-8 text-red-500" />
+                      </div>
+                      <p className="text-white text-base font-bold mb-1">Feed Offline</p>
+                      <p className="text-gray-500 text-xs">
+                        {proxyAvailable
+                          ? 'The local proxy could not reach this camera. It may be offline.'
+                          : 'Connection to the camera was lost. Start scripts/server.py to proxy feeds.'}
+                      </p>
+                    </div>
                   ) : (
                     <>
                       {!imgLoaded && (
@@ -1585,31 +1636,27 @@ function App() {
                         </div>
                       )}
                       <img
-                        key={`${selectedCamera.properties.id}-${imgCacheBust}`}
-                        src={getLiveUrl(selectedCamera.properties.feedUrl)}
+                        key={`${selectedCamera.properties.id}-${imgCacheBust}-${imgAttempt}`}
+                        src={imageSrc}
                         referrerPolicy={selectedCamera.properties.source?.startsWith('opencctv_') ? "no-referrer" : "strict-origin-when-cross-origin"}
                         crossOrigin={selectedCamera.properties.source?.startsWith('opencctv_') ? undefined : (CORS_ENABLED_DOMAINS.some(d => selectedCamera.properties.feedUrl.includes(d)) ? "anonymous" : undefined)}
                         alt={selectedCamera.properties.name}
                         className="w-full h-full object-contain"
                         style={{ opacity: imgLoaded ? 1 : 0 }}
                         onLoad={handleImageLoad}
-                        onError={(e) => {
-                          const img = e.target as HTMLImageElement;
-                          img.style.display = 'none';
-                          const fb = img.nextElementSibling as HTMLElement;
-                          if (fb) fb.style.display = 'flex';
+                        onError={() => {
+                          if (proxyAvailable && imgAttempt === 0) {
+                            // Proxy attempt failed — retry the same image directly once.
+                            setImgAttempt(1);
+                            setImgLoaded(false);
+                            return;
+                          }
+                          setImgFailed(true);
                           setImgLoaded(true);
                         }}
                       />
                     </>
                   )}
-                  <div className="hidden absolute inset-0 flex-col items-center justify-center text-center p-6 bg-[#05090C]">
-                    <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
-                      <Eye className="w-8 h-8 text-red-500" />
-                    </div>
-                    <p className="text-white text-base font-bold mb-1">Feed Offline</p>
-                    <p className="text-gray-500 text-xs">Connection to the camera was lost.</p>
-                  </div>
                 </>
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-center p-8 bg-[#05090C]">

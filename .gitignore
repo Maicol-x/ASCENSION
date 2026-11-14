@@ -14,3 +14,4 @@ public/cameras.pmtiles
 public/summary.json
 
 vite_output.log
+proxy_output.log

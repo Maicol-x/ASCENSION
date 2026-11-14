@@ -39,6 +39,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -101,10 +102,21 @@ def _proxy_host_allowed(host: str) -> bool:
     Only public http(s) camera hosts should ever be proxied."""
     if not host:
         return False
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return False  # unresolvable — let it fail closed
+    infos = None
+    for attempt in range(3):
+        try:
+            # Resolve IPv4 explicitly: this proxy only needs public camera hosts,
+            # and some resolvers intermittently fail the dual-stack lookup.
+            infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+            break
+        except socket.gaierror:
+            try:
+                infos = socket.getaddrinfo(host, None)
+                break
+            except socket.gaierror:
+                if attempt == 2:
+                    return False  # unresolvable — let it fail closed
+                time.sleep(0.2)
     for info in infos:
         addr = info[4][0]
         try:
@@ -206,27 +218,56 @@ class Handler(BaseHTTPRequestHandler):
             self._json(403, {"error": "host not allowed"})
             return
 
-        req_headers = {"User-Agent": "Mozilla/5.0 (NEXUS proxy)"}
+        # Many camera hosts 403 obvious bots or requests with no Referer. Send a
+        # real browser UA and a Referer of the target's own origin so the proxy
+        # behaves like the camera's own page loading the image.
+        req_headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                "image/avif,image/webp,image/apng,*/*;q=0.8"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": f"{parsed.scheme}://{parsed.netloc}/",
+        }
         for h in _PROXY_FORWARD_HEADERS:
             val = self.headers.get(h)
             if val:
                 req_headers[h] = val
 
-        try:
-            upstream = _proxy_open(target, req_headers)
-        except urllib.error.HTTPError as exc:
+        upstream = None
+        for attempt in range(3):
             try:
-                if isinstance(exc, _BlockedRedirect):
-                    self._json(403, {"error": "redirect host not allowed"})
-                    return
-                # Pass the upstream status through (403/404/etc.) so the client's
-                # error handling behaves the same as a direct fetch.
-                self._json(exc.code, {"error": f"upstream {exc.code}"})
-            finally:
-                exc.close()
-            return
-        except Exception as exc:
-            self._json(502, {"error": f"proxy fetch failed: {exc}"})
+                upstream = _proxy_open(target, req_headers)
+                break
+            except urllib.error.HTTPError as exc:
+                try:
+                    if isinstance(exc, _BlockedRedirect):
+                        self._json(403, {"error": "redirect host not allowed"})
+                        return
+                    # Pass the upstream status through (403/404/etc.) so the client's
+                    # error handling behaves the same as a direct fetch.
+                    self._json(exc.code, {"error": f"upstream {exc.code}"})
+                finally:
+                    exc.close()
+                return
+            except urllib.error.URLError as exc:
+                # Transient DNS/connect failure — retry a couple of times before
+                # giving up. Resolvers here occasionally fail for a fraction of a
+                # second, which would otherwise mark a healthy camera offline.
+                if attempt < 2:
+                    time.sleep(0.25)
+                    continue
+                self._json(502, {"error": f"proxy fetch failed: {exc}"})
+                return
+            except Exception as exc:
+                self._json(502, {"error": f"proxy fetch failed: {exc}"})
+                return
+        if upstream is None:
+            self._json(502, {"error": "proxy fetch failed"})
             return
 
         content_type = upstream.headers.get("Content-Type", "")
