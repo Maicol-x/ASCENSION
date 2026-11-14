@@ -822,7 +822,7 @@ function App() {
     if (syncLogRef.current) syncLogRef.current.scrollTop = syncLogRef.current.scrollHeight;
   }, [syncLog]);
 
-  const mapStyle = useMemo(() => "https://demotiles.maplibre.org/style.json", []);
+  const mapStyle = useMemo(() => "https://tiles.openfreemap.org/styles/dark", []);
 
   // Display country name from a raw code + source (US sources consolidate).
   const countryNameFor = (code: string, source: string) => {
