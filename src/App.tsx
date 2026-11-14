@@ -653,7 +653,7 @@ function App() {
           !validIndexArray(d.cc, d.ccDict.length) ||
           (d.ftDict !== undefined &&
             (!validStringArray(d.ftDict) || !validIndexArray(d.ft, d.ftDict.length))) ||
-          (manifest && (d.generation !== generation || d.count !== manifest.count))
+          (manifest && d.count !== manifest.count)
         ) {
           throw new Error('Core dataset does not match the published manifest or schema');
         }
