@@ -65,11 +65,19 @@ python scraper.py --all       # run everything
 
 Camera data lives in a SQLite store (`scripts/data/cameras.db`) and is exported to `public/cameras.geojson` plus the three-tier payload the frontend reads at runtime: `cameras.core.json` (map), `cameras.labels.json` (names, loaded behind it), and `cameras.detail/` (one chunk fetched per camera opened).
 
-**Local dev control server** (optional — powers the in-app "Data Sync" button)
+**Local dev control server** (powers the in-app "Data Sync" button **and** the media proxy)
 
 ```bash
-python scripts/server.py    # listens on http://localhost:8787, run alongside `npm run dev`
+python scripts/server.py    # listens on http://127.0.0.1:8787, run alongside `npm run dev`
 ```
+
+The frontend probes it on startup when running on `localhost`. While it is up,
+still images and HLS streams are fetched through `/api/proxy` first and only fall
+back to the direct URL, so cameras load even on networks whose browser egress
+proxy blocks those hosts. Stop the server and feeds go back to direct-only.
+
+Use `127.0.0.1`, not `localhost`: the server binds IPv4 only, while `localhost`
+can resolve to IPv6 (`::1`) and look unreachable.
 
 ## Configuration
 
