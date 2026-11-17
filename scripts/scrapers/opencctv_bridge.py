@@ -21,6 +21,7 @@ Non-eligible cameras are still stored (mapped, greyed out) for a future proxy ph
 
 import time
 import requests
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scrapers.utils import log, log_progress, build_feature, HEADERS
@@ -62,6 +63,39 @@ def _post_batch(ids: list, timeout: int) -> list:
 
 
 def _direct_eligible(rec: dict, feed_type: str) -> bool:
+    """Determina si un registro opencctv es directo elegible.
+    
+    La lógica original exigía force_direct=1 y sin proxy_zone/geo_allow.
+    Hemos relajado esto para fuentes que el proxy local (scripts/server.py)
+    ya puede servir con UA/Referer correctos, evitando necesidad de proxies
+    residenciales pagados.
+    """
+    # 1. Fuentes que el proxy local ya resuelve (UA Chrome + Referer)
+    #    Estas URLs regresan 200 con el proxy; sin él fallan por CORS/403.
+    proxy_worksources = {
+        "weathercams.faa.gov",           # imágenes JPEG (FAA weathercams)
+        "its.itsan.go.kr",               # m3u8 HLS (Corea ITS, 10.628 cams)
+        "skysfs3.trafficwise.org",       # preroll HLS (Castlerock, 4.798 cams)
+        "images-webcams.windy.com",      # jpg suizos (Swisswebcams, 2.985 cams)
+        "api.trafikinfo.trafikverket.se", # jpg sueco (Traficverket)
+        "511ny.org",                     # NY511 imágenes/HTML (NY State DOT)
+        "nysdot.skyvdn.com",             # NYSDOT m3u8 HLS streams
+    }
+    # 2. Si el feed usa uno de estos hosts, permitir direct_eligible
+    #    aun cuando force_direct=0 o tenga proxy_zone.
+    try:
+        host = urllib.parse.urlparse(rec.get("feed_url", "") or "").hostname or ""
+        print(f"DEBUG: host={host!r} in_worksources={host in proxy_worksources}")
+    except Exception as e:
+        host = ""
+        print(f"DEBUG: error={e}")
+    if host in proxy_worksources:
+        # Para iframe, el frontend aún no los soporta, así que conservamos el bloqueo.
+        if feed_type == "iframe" and rec.get("force_direct") != "1":
+            return False
+        return True
+    
+    # 2. Lógica original para todo lo demás
     if str(rec.get("force_direct")) != "1":
         return False
     if rec.get("proxy_zone") or rec.get("geo_allow"):

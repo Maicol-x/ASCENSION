@@ -32,9 +32,9 @@ from scrapers.utils import log, log_progress
 import store
 
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # PLUGIN REGISTRY
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 PLUGIN_REGISTRY = {
     "windy": {
         "module":      "scrapers.global.windy",
@@ -48,11 +48,23 @@ PLUGIN_REGISTRY = {
         "key":         None,
         "description": "~3,300 California highway cameras with HLS live streams",
     },
+    "ny511": {
+        "module":      "scrapers.usa.ny511",
+        "name":        "NY511 NY State",
+        "key":         None,
+        "description": "~1,800 New York State traffic cameras via 511ny.org and NYSDOT",
+    },
     "nyc_dot": {
         "module":      "scrapers.usa.new_york.nyc_dot",
         "name":        "NYC DOT",
         "key":         None,
         "description": "~950 New York City traffic cameras",
+    },
+    "brasil": {
+        "module":      "scrapers.sudamerica.brasil",
+        "name":        "Brasil Tráfego",
+        "key":         None,
+        "description": "Brazilian traffic cameras via DER-SP, CCR, CET-SP and CET-RJ",
     },
     "drivebc": {
         "module":      "scrapers.canada.bc.drivebc",
@@ -99,10 +111,10 @@ PLUGIN_REGISTRY = {
 }
 
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # SOURCE MAP  (plugin alias → geojson source field values)
 # Used by replace-source mode to know which cameras to drop.
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 def _build_source_map(states_override=None):
     src_map = {
         "windy":         "windy",
@@ -128,9 +140,9 @@ def _build_source_map(states_override=None):
     return src_map
 
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # ENVIRONMENT / CONFIG
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 def _load_env():
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
     if not os.path.exists(env_path):
@@ -161,9 +173,9 @@ CONFIG = {
 }
 
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # CLI
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 def _parse_args():
     parser = argparse.ArgumentParser(
         prog="scraper.py",
@@ -259,20 +271,20 @@ Examples:
     return parser.parse_args()
 
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # DISPLAY HELPERS
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 def _banner():
-    print("\n" + "═" * 65)
+    print("\n" + "=" * 65)
     print("  NEXUS — Camera Data Pipeline")
-    print("═" * 65 + "\n")
+    print("=" * 65 + "\n")
 
 
 def _divider(label=""):
     if label:
-        print(f"\n  ── {label} {'─' * max(0, 50 - len(label))}")
+        print(f"\n  -- {label} {'-' * max(0, 50 - len(label))}")
     else:
-        print(f"\n  {'─' * 55}")
+        print(f"\n  {'-' * 55}")
 
 
 def _list_plugins():
@@ -280,7 +292,7 @@ def _list_plugins():
     print("  Registered Plugins:\n")
     header = f"  {'ALIAS':<18} {'API KEY':<22} DESCRIPTION"
     print(header)
-    print("  " + "─" * (len(header) - 2))
+    print("  " + "-" * (len(header) - 2))
     for alias, info in PLUGIN_REGISTRY.items():
         key_col = f"⚠️  {info['key']}" if info["key"] else "✅ Free (no key)"
         print(f"  {alias:<18} {key_col:<22} {info['description']}")
@@ -323,9 +335,9 @@ def _show_stats():
     print(f"  {'Static image only':<30} {total - live_count:>10,}")
     print(f"  {'Direct-displayable':<30} {direct:>10,}")
     print()
-    print(f"  {'─' * 50}")
+    print(f"  {'-' * 50}")
     print(f"  {'REGION / SOURCE':<35} {'CAMERAS':>10}  {'LIVE':>6}")
-    print(f"  {'─' * 50}")
+    print(f"  {'-' * 50}")
 
     for region, sources in region_groups.items():
         region_cams = sum(by_source.get(s, 0) for s in sources)
@@ -352,12 +364,12 @@ def _show_stats():
             print(f"    {src:<33} {count:>8,}")
     print()
 
-    print(f"\n  {'─' * 50}\n")
+    print(f"\n  {'-' * 50}\n")
 
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # PLUGIN RUNNER
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 def _run_plugin(alias: str, config: dict) -> tuple:
     """Import and execute a plugin's fetch(config). Returns (alias, features, error)."""
     info = PLUGIN_REGISTRY.get(alias)
@@ -397,9 +409,9 @@ def _resolve_plugins(args) -> list:
     return selected
 
 
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 # MAIN
-# ─────────────────────────────────────────────────────────
+# ---------------------------------------------------------
 def _resolve_ipcamlive_store(output_path, compact_path, summary_path):
     """In-place fix for cameras already stored as `ipcamlive://<alias>`: resolve
     each to a real https m3u8 and UPDATE the row, then re-export. Lets the user
@@ -816,7 +828,7 @@ def main():
     print(f"  Parallel : {'yes' if args.parallel else 'no'}")
     print()
 
-    # ── Open store ─────────────────────────────────────────
+    # -- Open store -----------------------------------------
     conn = store.connect()
     store_stats    = store.stats(conn)
     existing_count = store_stats["total"]
@@ -826,7 +838,7 @@ def main():
     # target to what the store already holds (a re-run yields ~the same count).
     CONFIG["_PRIOR_SOURCE_COUNTS"] = store_stats.get("by_source", {})
 
-    # ── Run plugins ────────────────────────────────────────
+    # -- Run plugins ----------------------------------------
     plugin_results = {}
     plugin_errors  = {}
     start_time     = time.time()
@@ -852,7 +864,7 @@ def main():
                 plugin_results[alias] = features
                 log(f"Plugin '{alias}' returned {len(features):,} cameras", "OK")
 
-    # ── Merge into store ───────────────────────────────────
+    # -- Merge into store -----------------------------------
     # commit=False on every step + one conn.commit() at the end makes this a
     # single atomic transaction: if the process is killed anywhere in here
     # (e.g. a cancelled sync), SQLite rolls the whole batch back and the store
@@ -896,13 +908,15 @@ def main():
 
     added, updated = store.upsert_features(conn, all_new_features, commit=False)
 
-    deduped = store.dedupe_prefer_native(conn, commit=False)
-    if deduped:
-        log(f"Dedupe — dropped {deduped:,} opencctv cameras already covered by native sources.", "OK")
+    native_deduped, duplicate_deduped = store.dedupe_all(conn, commit=False)
+    if native_deduped:
+        log(f"Dedupe — dropped {native_deduped:,} opencctv cameras already covered by native sources.", "OK")
+    if duplicate_deduped:
+        log(f"Dedupe — dropped {duplicate_deduped:,} duplicate feeds (kept one original each).", "OK")
 
     conn.commit()
 
-    # ── Export artifacts ───────────────────────────────────
+    # -- Export artifacts -----------------------------------
     _divider("Exporting geojson + compact + summary")
     total = store.export_geojson(conn, output_path)
     store.export_compact(conn, compact_path)
@@ -910,13 +924,13 @@ def main():
     per_source_counts = store.stats(conn)["by_source"]
     conn.close()
 
-    # ── Summary ────────────────────────────────────────────
+    # -- Summary --------------------------------------------
     elapsed    = time.time() - start_time
     mins, secs = divmod(int(elapsed), 60)
 
-    print("\n" + "═" * 65)
-    print("  ✓  Pipeline Complete")
-    print("═" * 65)
+    print("\n" + "=" * 65)
+    print("  [OK]  Pipeline Complete")
+    print("=" * 65)
     print(f"  Total cameras  : {total:,}")
     print(f"  Added          : {added:,}")
     print(f"  Updated        : {updated:,}")

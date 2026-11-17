@@ -18,7 +18,7 @@ import time
 import sqlite3
 import uuid
 import shutil
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode, parse_qsl
 
 DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cameras.db")
 
@@ -66,6 +66,22 @@ def _legacy_direct_eligible(feed_url: str, stream_url: str) -> bool:
     return any(d in feed_url for d in _LEGACY_WORKING_DOMAINS)
 
 
+def _as_bool(value) -> bool:
+    """Parse booleans that arrive as real bools, 0/1, or strings.
+
+    GeoJSON properties keep `directEligible` as "True"/"False", so a plain
+    truthiness check would treat "False" as eligible. Also accept lower-case
+    and numeric spellings for hand-edited payloads.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "y", "on")
+    return False
+
+
 # ─────────────────────────────────────────────────────────
 # Connection / schema
 # ─────────────────────────────────────────────────────────
@@ -100,6 +116,8 @@ def _ensure_schema(conn: sqlite3.Connection):
             props_extra          TEXT,
             first_seen           TEXT,
             last_seen            TEXT,
+            last_checked         TEXT,
+            health_reason        TEXT,
             consecutive_failures INTEGER DEFAULT 0,
             deactivated_at       TEXT
         );
@@ -107,6 +125,19 @@ def _ensure_schema(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_cameras_country ON cameras(country);
         CREATE INDEX IF NOT EXISTS idx_cameras_host    ON cameras(origin_host);
         """
+    )
+    # Migrations for stores created before the health-check columns existed.
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(cameras)")}
+    for column, decl in (
+        ("last_checked", "TEXT"),
+        ("health_reason", "TEXT"),
+        ("consecutive_failures", "INTEGER DEFAULT 0"),
+        ("deactivated_at", "TEXT"),
+    ):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE cameras ADD COLUMN {column} {decl}")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cameras_checked ON cameras(last_checked)"
     )
     conn.commit()
 
@@ -125,7 +156,10 @@ def _row_from_feature(feat: dict, now: str) -> dict:
     # When absent (all native scrapers), infer from the legacy allowlist so
     # display behavior matches the pre-flag app exactly.
     if "directEligible" in props:
-        direct = 1 if props.get("directEligible") else 0
+        # GeoJSON round-trips store this flag as the strings "True"/"False",
+        # and Python treats the non-empty string "False" as truthy — which
+        # silently promoted every camera to direct-eligible on re-import.
+        direct = 1 if _as_bool(props.get("directEligible")) else 0
     else:
         direct = 1 if _legacy_direct_eligible(feed_url, stream_url) else 0
 
@@ -221,6 +255,61 @@ def delete_sources(conn: sqlite3.Connection, sources: list, commit: bool = True)
     return removed
 
 
+def record_health(conn: sqlite3.Connection, results, deactivate_after: int = 3,
+                  commit: bool = True) -> dict:
+    """Persist feed health for a batch of probes.
+
+    Every camera is checked periodically. A single failure is often a transient
+    timeout, a temporary 5xx or a host that throttles, so nothing is hidden until
+    it has failed `deactivate_after` checks *in a row*. A success immediately
+    clears the streak and re-activates the camera, so a source that comes back
+    online returns to the map on its own.
+
+    Each result is a dict with ``id``, ``ok`` and ``reason``.
+    """
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    ok_ids, fail_ids = [], []
+    for r in results:
+        (ok_ids if r.get("ok") else fail_ids).append(r)
+
+    deactivated = reactivated = 0
+    if ok_ids:
+        marks = ",".join("?" * len(ok_ids))
+        dead = {
+            row["id"] for row in conn.execute(
+                f"SELECT id FROM cameras WHERE deactivated_at IS NOT NULL AND id IN ({marks})",
+                [r["id"] for r in ok_ids],
+            )
+        }
+        for r in ok_ids:
+            conn.execute(
+                "UPDATE cameras SET last_checked=?, last_seen=?, health_reason=?,"
+                " consecutive_failures=0, deactivated_at=NULL WHERE id=?",
+                (now, now, (r.get("reason") or "")[:120], r["id"]),
+            )
+        reactivated = len(dead)
+    for r in fail_ids:
+        conn.execute(
+            "UPDATE cameras SET last_checked=?, health_reason=?,"
+            " consecutive_failures=COALESCE(consecutive_failures,0)+1 WHERE id=?",
+            (now, (r.get("reason") or "")[:120], r["id"]),
+        )
+    # Deactivate only after the streak threshold; never touch already-dead rows.
+    rows = conn.execute(
+        "SELECT id FROM cameras WHERE deactivated_at IS NULL"
+        " AND COALESCE(consecutive_failures,0) >= ?", (deactivate_after,)
+    ).fetchall()
+    if rows:
+        conn.executemany(
+            "UPDATE cameras SET deactivated_at=? WHERE id=?", ((now, r["id"]) for r in rows)
+        )
+        deactivated = len(rows)
+    if commit:
+        conn.commit()
+    return {"ok": len(ok_ids), "failed": len(fail_ids),
+            "deactivated": deactivated, "reactivated": reactivated}
+
+
 def clear_all(conn: sqlite3.Connection, commit: bool = True) -> int:
     cur = conn.cursor()
     n = cur.execute("SELECT COUNT(*) FROM cameras").fetchone()[0]
@@ -230,17 +319,62 @@ def clear_all(conn: sqlite3.Connection, commit: bool = True) -> int:
     return n
 
 
-def _feed_key(feed_url: str, origin_host: str) -> str:
-    """Identity key for a physical feed: host + path (query/scheme ignored)."""
+def _canonical_url_key(feed_url: str) -> str:
+    """Identity key for a physical feed: host + path + sorted query.
+
+    Scheme and fragment are ignored (http/https serve the same camera), but the
+    query is kept: many portals expose different cameras as `index.php?cam=N`,
+    so dropping the query would merge distinct cameras. Query keys are sorted
+    so reordered tracking params still collide.
+    """
     if not feed_url:
         return ""
     try:
-        path = urlparse(feed_url).path.lower().rstrip("/")
+        u = urlparse(feed_url.strip())
     except Exception:
         return ""
-    if not path:
+    if not u.netloc:
         return ""
-    return (origin_host or "") + path
+    path = (u.path or "/").lower().rstrip("/")
+    query = urlencode(sorted(parse_qsl(u.query, keep_blank_values=True)))
+    return u.netloc.lower() + path + (("?" + query) if query else "")
+
+
+def _feed_key(feed_url: str, origin_host: str) -> str:
+    """Backwards-compatible wrapper around `_canonical_url_key`."""
+    return _canonical_url_key(feed_url)
+
+
+def _merge_missing(conn: sqlite3.Connection, winner, losers) -> None:
+    """Copy live/player URLs from duplicates into the kept original when missing.
+
+    Dedupe keeps one row, but the loser sometimes carries the actual HLS/player
+    URL while the winner only has a still image. Filling the gaps keeps live
+    playback after duplicate removal instead of silently downgrading it.
+    """
+    stream = (winner["stream_url"] or "").strip()
+    player = (winner["player_url"] or "").strip()
+    direct = 1 if winner["direct_eligible"] else 0
+    changed = False
+    for r in losers:
+        if not stream:
+            cand = (r["stream_url"] or "").strip()
+            if cand:
+                stream = cand
+                changed = True
+        if not player:
+            cand = (r["player_url"] or "").strip()
+            if cand:
+                player = cand
+                changed = True
+        if not direct and r["direct_eligible"]:
+            direct = 1
+            changed = True
+    if changed:
+        conn.execute(
+            "UPDATE cameras SET stream_url=?, player_url=?, direct_eligible=? WHERE id=?",
+            (stream, player, direct, winner["id"]),
+        )
 
 
 def dedupe_prefer_native(conn: sqlite3.Connection, commit: bool = True) -> int:
@@ -248,24 +382,87 @@ def dedupe_prefer_native(conn: sqlite3.Connection, commit: bool = True) -> int:
     camera — NEXUS's own scrapers are authoritative for the sources they cover.
 
     `commit=False` — see upsert_features."""
-    rows = conn.execute("SELECT id, source, feed_url, origin_host FROM cameras").fetchall()
-    native_keys = set()
+    rows = conn.execute(
+        "SELECT id, source, feed_url, stream_url, player_url, direct_eligible,"
+        " origin_host FROM cameras"
+    ).fetchall()
+    native_by_key = {}
     for r in rows:
         if not (r["source"] or "").startswith("opencctv_"):
-            k = _feed_key(r["feed_url"], r["origin_host"])
+            url = (r["stream_url"] or "").strip() or (r["feed_url"] or "").strip()
+            k = _canonical_url_key(url)
             if k:
-                native_keys.add(k)
+                native_by_key.setdefault(k, r)
+
     to_delete = []
     for r in rows:
         if (r["source"] or "").startswith("opencctv_"):
-            k = _feed_key(r["feed_url"], r["origin_host"])
-            if k and k in native_keys:
+            url = (r["stream_url"] or "").strip() or (r["feed_url"] or "").strip()
+            k = _canonical_url_key(url)
+            if k and k in native_by_key:
+                _merge_missing(conn, native_by_key[k], [r])
                 to_delete.append((r["id"],))
     if to_delete:
         conn.executemany("DELETE FROM cameras WHERE id=?", to_delete)
         if commit:
             conn.commit()
     return len(to_delete)
+
+
+def dedupe_duplicate_feeds(conn: sqlite3.Connection, commit: bool = True) -> int:
+    """Keep exactly one camera per physical feed (host + path + query).
+
+    Duplicates arrive constantly: the same snapshot URL re-listed under several
+    coordinates, the same stream found by two directories, or a source re-run
+    that yields the same feed under a new id. This runs after every upsert batch
+    and keeps the best original:
+      1. native NEXUS sources over `opencctv_*` mirrors
+      2. live streams over still images
+      3. direct-eligible feeds over ones that need the proxy
+      4. the oldest `first_seen`, then the smallest id
+    """
+    rows = conn.execute(
+        "SELECT id, source, feed_url, stream_url, player_url, direct_eligible,"
+        " first_seen FROM cameras"
+    ).fetchall()
+    groups: dict[str, list] = {}
+    for r in rows:
+        url = (r["stream_url"] or "").strip() or (r["feed_url"] or "").strip()
+        key = _canonical_url_key(url)
+        if not key:
+            continue
+        groups.setdefault(key, []).append(r)
+
+    def rank(r):
+        source = r["source"] or ""
+        native = 0 if source.startswith("opencctv_") else 1
+        live = 1 if (r["stream_url"] or "").strip() else 0
+        direct = 1 if r["direct_eligible"] else 0
+        first = r["first_seen"] or "9999"
+        return (-native, -live, -direct, first, r["id"] or "")
+
+    to_delete = []
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        group.sort(key=rank)
+        _merge_missing(conn, group[0], group[1:])
+        to_delete.extend((r["id"],) for r in group[1:])
+
+    if to_delete:
+        conn.executemany("DELETE FROM cameras WHERE id=?", to_delete)
+        if commit:
+            conn.commit()
+    return len(to_delete)
+
+
+def dedupe_all(conn: sqlite3.Connection, commit: bool = True) -> tuple:
+    """Run every dedupe pass the pipeline needs. Returns (native_mirrors, duplicates)."""
+    native = dedupe_prefer_native(conn, commit=False)
+    duplicate = dedupe_duplicate_feeds(conn, commit=False)
+    if commit:
+        conn.commit()
+    return native, duplicate
 
 
 # ─────────────────────────────────────────────────────────
@@ -344,16 +541,42 @@ def _feature_from_row(row: sqlite3.Row) -> dict:
     }
 
 
+def _hide_dead_cameras(conn: sqlite3.Connection) -> bool:
+    """Should exports drop cameras the health checker marked dead?
+
+    Hiding dead feeds is the point of the checker: a pin that always opens an
+    offline player is worse than no pin. But the same switch can erase the whole
+    map when *our* network is the thing that is broken, so it fails safe — if
+    more than 40% of the store looks dead, that is an outage, not 100k dead
+    cameras, and nothing is hidden.
+    """
+    total = conn.execute("SELECT COUNT(*) FROM cameras").fetchone()[0]
+    dead = conn.execute(
+        "SELECT COUNT(*) FROM cameras WHERE deactivated_at IS NOT NULL"
+    ).fetchone()[0]
+    if not dead:
+        return False
+    if total and dead / total > 0.4:
+        print(f"[WARN] health check marks {dead:,}/{total:,} cameras dead "
+              f"({100 * dead / total:.0f}%): looks like a network outage, "
+              "keeping them in the export.")
+        return False
+    return True
+
+
 def export_geojson(conn: sqlite3.Connection, path: str) -> int:
     owns_transaction = not conn.in_transaction
     if owns_transaction:
         conn.execute("BEGIN")
     cursor = None
     try:
+        hide_dead = _hide_dead_cameras(conn)
+        alive = " WHERE deactivated_at IS NULL" if hide_dead else ""
         per_source = {
             row["source"]: row["count"]
             for row in conn.execute(
-                "SELECT source, COUNT(*) AS count FROM cameras GROUP BY source"
+                "SELECT source, COUNT(*) AS count FROM cameras"
+                + alive + " GROUP BY source"
             )
         }
         count = sum(per_source.values())
@@ -363,7 +586,7 @@ def export_geojson(conn: sqlite3.Connection, path: str) -> int:
             "sources":           sorted(per_source),
             "per_source_counts": per_source,
         }
-        cursor = conn.execute("SELECT * FROM cameras")
+        cursor = conn.execute("SELECT * FROM cameras" + alive)
 
         def write_geojson(file):
             file.write('{"type":"FeatureCollection","metadata":')
@@ -413,9 +636,11 @@ def export_compact(conn: sqlite3.Connection, path: str) -> int:
 
     Returns the camera count.
     """
+    hide_dead = _hide_dead_cameras(conn)
+    alive = " WHERE deactivated_at IS NULL" if hide_dead else ""
     rows = conn.execute(
         "SELECT id,name,city,country,feed_url,stream_url,source,lon,lat,"
-        "direct_eligible,update_rate,feed_type,props_extra FROM cameras"
+        "direct_eligible,update_rate,feed_type,props_extra FROM cameras" + alive
     ).fetchall()
 
     lon, lat, de, live, ur = [], [], [], [], []
@@ -455,6 +680,15 @@ def export_compact(conn: sqlite3.Connection, path: str) -> int:
         route.append(rt)
 
     count = len(ids)
+
+    # Guard against publishing a dead dataset. A bad rebuild once blanked
+    # feed_url/direct_eligible for every row, and the export happily shipped
+    # it — the map then rendered zero cameras. Fail loudly instead.
+    if count >= 1000 and not any(feed):
+        raise RuntimeError(
+            f"Refusing to export {count} cameras with no feed URLs: the store "
+            "looks corrupt. Re-import a known-good geojson or rerun the scrapers."
+        )
     generated = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     generation = uuid.uuid4().hex
 
@@ -518,7 +752,13 @@ def export_compact(conn: sqlite3.Connection, path: str) -> int:
             if ext == ".json" and name.isdigit() and int(name) >= n_chunks:
                 os.remove(os.path.join(legacy_detail_dir, stale))
 
-        os.replace(stage_dir, generation_dir)
+        try:
+            os.replace(stage_dir, generation_dir)
+        except (OSError, PermissionError):
+            # Fallback for Windows/OneDrive locks: copy then rename
+            import shutil as _shutil
+            _shutil.copytree(stage_dir, generation_dir)
+            _shutil.rmtree(stage_dir, ignore_errors=True)
         manifest = {
             "version": 1,
             "generation": generation,
@@ -542,20 +782,27 @@ def export_compact(conn: sqlite3.Connection, path: str) -> int:
 def export_summary(conn: sqlite3.Connection, path: str) -> dict:
     """Small precomputed rollups so the frontend never iterates all features.
     Country counts are keyed by raw code; the frontend maps codes -> display names."""
-    total = conn.execute("SELECT COUNT(*) FROM cameras").fetchone()[0]
-    live = conn.execute("SELECT COUNT(*) FROM cameras WHERE stream_url != ''").fetchone()[0]
+    total_all = conn.execute("SELECT COUNT(*) FROM cameras").fetchone()[0]
+    dead = conn.execute(
+        "SELECT COUNT(*) FROM cameras WHERE deactivated_at IS NOT NULL").fetchone()[0]
+    alive = " WHERE deactivated_at IS NULL" if dead and dead / max(1, total_all) <= 0.4 else ""
+    total = conn.execute("SELECT COUNT(*) FROM cameras" + alive).fetchone()[0]
+    live = conn.execute(
+        "SELECT COUNT(*) FROM cameras WHERE stream_url != ''" +
+        (" AND deactivated_at IS NULL" if alive else "")).fetchone()[0]
     by_country = {r["country"]: r["n"] for r in conn.execute(
-        "SELECT country, COUNT(*) n FROM cameras GROUP BY country")}
+        "SELECT country, COUNT(*) n FROM cameras" + alive + " GROUP BY country")}
     by_source = {r["source"]: r["n"] for r in conn.execute(
-        "SELECT source, COUNT(*) n FROM cameras GROUP BY source")}
+        "SELECT source, COUNT(*) n FROM cameras" + alive + " GROUP BY source")}
     by_category = {r["type"]: r["n"] for r in conn.execute(
-        "SELECT type, COUNT(*) n FROM cameras GROUP BY type")}
+        "SELECT type, COUNT(*) n FROM cameras" + alive + " GROUP BY type")}
 
     summary = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "total": total,
         "live": live,
         "static": total - live,
+        "hidden_dead": dead if alive else 0,
         "byCountry": by_country,
         "bySource": by_source,
         "byCategory": by_category,

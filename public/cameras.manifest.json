@@ -1,10 +1,1 @@
-{
-  "version": 1,
-  "generation": "2026-07-25T22:41:20Z",
-  "count": 229308,
-  "files": {
-    "core": "/cameras.core.json",
-    "labels": "/cameras.labels.json",
-    "detail": "/cameras.detail/{chunk}.json"
-  }
-}
+{"version":1,"generation":"c84f8f68f4fd44568f34271733593c63","count":195904,"files":{"core":"/cameras.generations/c84f8f68f4fd44568f34271733593c63/core.json","labels":"/cameras.generations/c84f8f68f4fd44568f34271733593c63/labels.json","detail":"/cameras.generations/c84f8f68f4fd44568f34271733593c63/detail/{chunk}.json"}}
